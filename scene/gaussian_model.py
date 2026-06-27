@@ -250,6 +250,30 @@ class GaussianModel:
         
         points = self.voxelize_sample(points, voxel_size=self.voxel_size)
         fused_point_cloud = torch.tensor(np.asarray(points)).float().cuda()
+
+        # ==========================================
+        # 【大作业改进 A：空间密度自适应撒点补偿】
+        # 针对弱纹理区域COLMAP点云极度稀疏的问题，强制注入均匀点阵
+        # ==========================================
+        SPARSE_THRESHOLD = 60000 
+        num_original_points = fused_point_cloud.shape[0]
+
+        if num_original_points < SPARSE_THRESHOLD:
+            num_to_add = SPARSE_THRESHOLD - num_original_points
+            
+            # 计算当前点云的包围盒 (Bounding Box)
+            min_bounds = fused_point_cloud.min(dim=0)[0]
+            max_bounds = fused_point_cloud.max(dim=0)[0]
+            
+            # 在包围盒内生成随机均匀补偿点
+            random_points = torch.rand(num_to_add, 3).cuda()
+            compensated_points = random_points * (max_bounds - min_bounds) + min_bounds
+            
+            # 暴力拼接到原点云中
+            fused_point_cloud = torch.cat([fused_point_cloud, compensated_points], dim=0)
+            print(f"\n[Ablation A Activated] 弱纹理检测触发！原始点数: {num_original_points}，强制注入 {num_to_add} 个补偿锚点！\n")
+        # ==========================================
+
         offsets = torch.zeros((fused_point_cloud.shape[0], self.n_offsets, 3)).float().cuda()
         anchors_feat = torch.zeros((fused_point_cloud.shape[0], self.feat_dim)).float().cuda()
         
